@@ -123,54 +123,71 @@ function formatDate(dateString) {
     return date.toLocaleDateString('it-IT', options);
 }
 
+let unsubscribeExpenses = null;
+
 function displayExpenses() {
     const expenseList = document.getElementById('expenseList');
-    
-    // Usa onSnapshot per aggiornare in tempo reale
-    db.collection("expenses").orderBy("date", "desc").onSnapshot((querySnapshot) => {
-        // Svuota l'elenco prima di aggiungere nuove spese
+
+    // Rimuovi eventuali listener precedenti per evitare duplicazioni
+    if (unsubscribeExpenses) {
+        unsubscribeExpenses();
+    }
+
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser) {
         expenseList.innerHTML = '';
+        document.getElementById('totalBalance').textContent = '';
+        return;
+    }
 
-        let totalJackMesso = 0;
-        let totalSteMesso = 0;
-        let totalJackDovuto = 0;
-        let totalSteDovuto = 0;
+    // Usa onSnapshot per aggiornare in tempo reale solo le spese dell'utente corrente
+    unsubscribeExpenses = db.collection("expenses")
+        .where("userId", "==", currentUser.uid)
+        .orderBy("date", "desc")
+        .onSnapshot((querySnapshot) => {
+            // Svuota l'elenco prima di aggiungere nuove spese
+            expenseList.innerHTML = '';
 
-        querySnapshot.forEach((doc) => {
-            const expense = doc.data();
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${formatDate(expense.date)}</td>
-                <td>${expense.description}</td>
-                <td>€${parseFloat(expense.totalAmount).toFixed(2)}</td>
-                <td>€${parseFloat(expense.jackAmount).toFixed(2)}</td>
-                <td>€${parseFloat(expense.steAmount).toFixed(2)}</td>
-                <td>€${parseFloat(expense.jackShare).toFixed(2)}</td>
-                <td>€${parseFloat(expense.steShare).toFixed(2)}</td>
-                <td><button class="delete-btn" onclick="confirmDeleteExpense('${doc.id}')">Elimina</button></td>
-            `;
-            expenseList.appendChild(row);
+            let totalJackMesso = 0;
+            let totalSteMesso = 0;
+            let totalJackDovuto = 0;
+            let totalSteDovuto = 0;
 
-            // Accumula i totali per Jack e Ste
-            totalJackMesso += parseFloat(expense.jackAmount);
-            totalSteMesso += parseFloat(expense.steAmount);
-            totalJackDovuto += parseFloat(expense.jackShare);
-            totalSteDovuto += parseFloat(expense.steShare);
+            querySnapshot.forEach((doc) => {
+                const expense = doc.data();
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${formatDate(expense.date)}</td>
+                    <td>${expense.description}</td>
+                    <td>€${parseFloat(expense.totalAmount).toFixed(2)}</td>
+                    <td>€${parseFloat(expense.jackAmount).toFixed(2)}</td>
+                    <td>€${parseFloat(expense.steAmount).toFixed(2)}</td>
+                    <td>€${parseFloat(expense.jackShare).toFixed(2)}</td>
+                    <td>€${parseFloat(expense.steShare).toFixed(2)}</td>
+                    <td><button class="delete-btn" onclick="confirmDeleteExpense('${doc.id}')">Elimina</button></td>
+                `;
+                expenseList.appendChild(row);
+
+                // Accumula i totali per Jack e Ste
+                totalJackMesso += parseFloat(expense.jackAmount);
+                totalSteMesso += parseFloat(expense.steAmount);
+                totalJackDovuto += parseFloat(expense.jackShare);
+                totalSteDovuto += parseFloat(expense.steShare);
+            });
+
+            const jackBalance = totalJackMesso - totalJackDovuto;
+            let balanceText = '';
+
+            if (jackBalance > 0) {
+                balanceText = `Ste deve dare a Jack: €${jackBalance.toFixed(2)}`;
+            } else if (jackBalance < 0) {
+                balanceText = `Jack deve dare a Ste: €${Math.abs(jackBalance).toFixed(2)}`;
+            } else {
+                balanceText = `Jack e Ste sono pari.`;
+            }
+
+            document.getElementById('totalBalance').textContent = balanceText;
         });
-
-        const jackBalance = totalJackMesso - totalJackDovuto;
-        let balanceText = '';
-
-        if (jackBalance > 0) {
-            balanceText = `Ste deve dare a Jack: €${jackBalance.toFixed(2)}`;
-        } else if (jackBalance < 0) {
-            balanceText = `Jack deve dare a Ste: €${Math.abs(jackBalance).toFixed(2)}`;
-        } else {
-            balanceText = `Jack e Ste sono pari.`;
-        }
-
-        document.getElementById('totalBalance').textContent = balanceText;
-    });
 }
 
 function confirmDeleteExpense(id) {
